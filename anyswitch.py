@@ -1,8 +1,8 @@
 """
 AnySwitch — Switch node with unlimited dynamically-growing "any" inputs.
 
-The JS companion (web/js/any_switch.js) adds a new optional input slot
-whenever the last one is connected, so the node grows as needed.
+The JS companion (web/js/any_switch.js) adds new optional input slots
+as needed. Python only declares input_1; extra inputs arrive via kwargs.
 """
 
 
@@ -18,23 +18,18 @@ class AnyType(str):
 
 ANY = AnyType("*")
 
-# Max number of optional inputs the Python side will accept.
-# The JS side can grow up to this many. 20 should be more than enough.
-MAX_INPUTS = 20
-
 
 class AnySwitch:
     @classmethod
     def INPUT_TYPES(cls):
-        inputs = {
+        return {
             "required": {
-                "select": ("INT", {"default": 1, "min": 1, "max": MAX_INPUTS}),
+                "select": ("INT", {"default": 1, "min": 1, "max": 99}),
             },
-            "optional": {},
+            "optional": {
+                "input_1": (ANY,),
+            },
         }
-        for i in range(1, MAX_INPUTS + 1):
-            inputs["optional"][f"input_{i}"] = (ANY,)
-        return inputs
 
     RETURN_TYPES = (ANY,)
     RETURN_NAMES = ("output",)
@@ -52,7 +47,7 @@ class AnySwitch:
     def switch(self, select=1, **kwargs):
         # Collect all connected inputs in order
         connected = []
-        for i in range(1, MAX_INPUTS + 1):
+        for i in range(1, 100):
             key = f"input_{i}"
             if key in kwargs and kwargs[key] is not None:
                 connected.append((i, kwargs[key]))

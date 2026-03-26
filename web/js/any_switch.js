@@ -40,6 +40,9 @@ app.registerExtension({
 					node.addInput(`input_${i}`, "*");
 				}
 			}
+
+			// Fit node size to actual content
+			node.setSize(node.computeSize());
 		}
 
 		const onCreated = nodeType.prototype.onNodeCreated;
@@ -54,6 +57,7 @@ app.registerExtension({
 					this.removeInput(i);
 				}
 			}
+			this.setSize(this.computeSize());
 		};
 
 		const onConnChange = nodeType.prototype.onConnectionsChange;
@@ -69,7 +73,6 @@ app.registerExtension({
 		nodeType.prototype.onConfigure = function (info) {
 			onConfigure?.apply(this, arguments);
 
-			// After links are restored, sync slots
 			requestAnimationFrame(() => {
 				syncInputSlots(this);
 			});
@@ -96,6 +99,7 @@ app.registerExtension({
 					inp.link = null;
 				}
 			}
+			cloned.setSize(cloned.computeSize());
 
 			return cloned;
 		};
