@@ -19,7 +19,7 @@ app.registerExtension({
 			// We want exactly: input_1 .. input_(lastConnected+1)
 			const target = lastConnected + 1;
 
-			// Remove excess trailing input_N slots
+			// Remove excess trailing unconnected input_N slots
 			for (let i = node.inputs.length - 1; i >= 0; i--) {
 				if (!node.inputs[i].name.startsWith("input_")) continue;
 				const idx = parseInt(node.inputs[i].name.split("_")[1]);
@@ -46,7 +46,9 @@ app.registerExtension({
 		nodeType.prototype.onNodeCreated = function () {
 			onCreated?.apply(this, arguments);
 
-			// Start with only input_1
+			// Only strip inputs on genuinely new nodes, not during load/undo
+			if (app.configuringGraph) return;
+
 			for (let i = this.inputs.length - 1; i >= 0; i--) {
 				if (this.inputs[i].name.startsWith("input_") && this.inputs[i].name !== "input_1") {
 					this.removeInput(i);
@@ -58,34 +60,19 @@ app.registerExtension({
 		nodeType.prototype.onConnectionsChange = function (side, slot, connected, linkInfo) {
 			onConnChange?.apply(this, arguments);
 			if (side !== LiteGraph.INPUT) return;
+			if (app.configuringGraph) return;
 			syncInputSlots(this);
 		};
 
+		// On load/undo/redo: let ComfyUI restore all links first, then clean up
 		const onConfigure = nodeType.prototype.onConfigure;
 		nodeType.prototype.onConfigure = function (info) {
-			// Remove all input_N first
-			for (let i = this.inputs.length - 1; i >= 0; i--) {
-				if (this.inputs[i].name.startsWith("input_")) {
-					this.removeInput(i);
-				}
-			}
-
-			// Re-add based on saved links
-			const savedInputs = info.inputs || [];
-			let maxConnected = 0;
-			for (const inp of savedInputs) {
-				if (inp.name.startsWith("input_") && inp.link != null) {
-					const idx = parseInt(inp.name.split("_")[1]);
-					if (idx > maxConnected) maxConnected = idx;
-				}
-			}
-
-			const target = maxConnected + 1;
-			for (let i = 1; i <= target; i++) {
-				this.addInput(`input_${i}`, "*");
-			}
-
 			onConfigure?.apply(this, arguments);
+
+			// After links are restored, sync slots
+			requestAnimationFrame(() => {
+				syncInputSlots(this);
+			});
 		};
 
 		// On clone/paste: reset to just input_1
