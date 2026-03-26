@@ -1,0 +1,5 @@
+[project]
+name = "banini-nodes"
+description = "Banini's custom nodes for ComfyUI — pipeline tools, memory management, LoRA stacking, and Set/Get with categories"
+version = "1.0.0"
+license = "MIT"
