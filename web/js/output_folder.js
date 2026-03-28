@@ -13,33 +13,40 @@ app.registerExtension({
 			const folderWidget = this.widgets?.find(w => w.name === "folder");
 			if (!folderWidget) return;
 
-			// Refresh folder list from server every time the dropdown values are read
-			const origOptions = folderWidget.options;
-			Object.defineProperty(folderWidget.options, "values", {
-				get: () => {
-					// Trigger async refresh (updates on next open)
-					fetch("/banini/output_folders")
-						.then(r => r.json())
-						.then(folders => {
-							folderWidget._cachedFolders = folders;
-						})
-						.catch(() => {});
-					return folderWidget._cachedFolders || origOptions.values || ["(root)"];
-				},
-				set: (v) => {
-					folderWidget._cachedFolders = v;
-				},
-				enumerable: true,
-				configurable: true,
-			});
-
-			// Initial fetch
+			// Fetch fresh folder list once on creation
 			fetch("/banini/output_folders")
 				.then(r => r.json())
 				.then(folders => {
-					folderWidget._cachedFolders = folders;
+					folderWidget.options.values = folders;
+					if (!folders.includes(folderWidget.value)) {
+						folderWidget.value = folders[0] || "(root)";
+					}
 				})
 				.catch(() => {});
+		};
+
+		// Right-click option to refresh folder list
+		const origMenu = nodeType.prototype.getExtraMenuOptions;
+		nodeType.prototype.getExtraMenuOptions = function (_, options) {
+			origMenu?.apply(this, arguments);
+			const node = this;
+			options.unshift({
+				content: "Refresh folder list",
+				callback: () => {
+					const folderWidget = node.widgets?.find(w => w.name === "folder");
+					if (!folderWidget) return;
+					fetch("/banini/output_folders")
+						.then(r => r.json())
+						.then(folders => {
+							folderWidget.options.values = folders;
+							if (!folders.includes(folderWidget.value)) {
+								folderWidget.value = folders[0] || "(root)";
+							}
+							app.graph.setDirtyCanvas(true, true);
+						})
+						.catch(() => {});
+				},
+			});
 		};
 	},
 });
