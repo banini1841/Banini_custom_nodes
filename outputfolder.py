@@ -55,8 +55,8 @@ class OutputFolderBrowser:
 
         suffix = suffix.strip().strip("/").strip("\\")
         if suffix:
-            return (os.path.join(base, suffix),)
-        return (base,)
+            return (base + os.sep + suffix,)
+        return (base + os.sep,)
 
 
 NODE_CLASS_MAPPINGS = {
