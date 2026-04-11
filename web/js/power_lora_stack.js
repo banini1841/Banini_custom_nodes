@@ -268,6 +268,9 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name !== "PowerLoraStack") return;
 
+        // Re-fetch lora list on every node def refresh (e.g. pressing 'r')
+        fetchLoraList();
+
         const _onCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             _onCreated?.apply(this, arguments);
