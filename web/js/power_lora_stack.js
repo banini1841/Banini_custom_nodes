@@ -54,7 +54,7 @@ function buildWidget(node, savedValue) {
 
     const w = {
         name: "loras",
-        type: "power_lora_stack",
+        type: "custom",
         _rows: rows,
         _y: 0,
         _draggingRow: -1,
@@ -281,7 +281,15 @@ app.registerExtension({
             if (idx >= 0) this.widgets.splice(idx, 1);
 
             const widget = buildWidget(this, saved);
-            this.widgets.splice(Math.max(0, idx), 0, widget);
+            this.addCustomWidget(widget);
+
+            // addCustomWidget appends — move back to the original slot so the
+            // widget stays where the stock "loras" string widget was.
+            if (idx >= 0 && idx < this.widgets.length - 1) {
+                const added = this.widgets.pop();
+                this.widgets.splice(idx, 0, added);
+            }
+
             this.setSize([Math.max(this.size[0], 360), this.computeSize()[1]]);
         };
     }
