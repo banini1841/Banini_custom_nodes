@@ -1,10 +1,11 @@
 import { app } from "../../../scripts/app.js";
+import { api } from "../../../scripts/api.js";
 
 let LORA_LIST = ["None"];
 
 async function fetchLoraList() {
     try {
-        const resp = await fetch("/object_info/LoraLoader");
+        const resp = await api.fetchApi("/object_info/LoraLoader");
         const data = await resp.json();
         LORA_LIST = ["None", ...data.LoraLoader.input.required.lora_name[0]];
     } catch (e) {
@@ -152,7 +153,7 @@ function buildWidget(node, savedValue) {
                     if (this._hasDragged) {
                         const v = this._dragStartStrength + dx * 0.05;
                         this._rows[this._draggingRow].strength = Math.round(Math.max(-10, Math.min(10, v)) * 100) / 100;
-                        app.graph.setDirtyCanvas(true, true);
+                        node.setDirtyCanvas(true, true);
                     }
                 }
                 return false;
@@ -174,7 +175,7 @@ function buildWidget(node, savedValue) {
                             const n = parseFloat(v);
                             if (!isNaN(n)) {
                                 this._rows[dragRow].strength = Math.round(Math.max(-10, Math.min(10, n)) * 100) / 100;
-                                app.graph.setDirtyCanvas(true, true);
+                                node.setDirtyCanvas(true, true);
                             }
                         }, event);
                     }
@@ -189,7 +190,7 @@ function buildWidget(node, savedValue) {
             if (ry >= ay && ry < ay + ADD_H) {
                 this._rows.push({ enabled: true, name: "None", strength: 1.0 });
                 node.setSize([node.size[0], node.computeSize()[1]]);
-                app.graph.setDirtyCanvas(true, true);
+                node.setDirtyCanvas(true, true);
                 return true;
             }
 
@@ -201,7 +202,7 @@ function buildWidget(node, savedValue) {
             // Toggle
             if (rx >= cx && rx < cx + TOGGLE_W) {
                 this._rows[rowIdx].enabled = !this._rows[rowIdx].enabled;
-                app.graph.setDirtyCanvas(true, true);
+                node.setDirtyCanvas(true, true);
                 return true;
             }
             cx += TOGGLE_W + GAP;
@@ -213,7 +214,7 @@ function buildWidget(node, savedValue) {
                         content: v,
                         callback: () => {
                             this._rows[rowIdx].name = v;
-                            app.graph.setDirtyCanvas(true, true);
+                            node.setDirtyCanvas(true, true);
                         }
                     })),
                     { event, className: "dark" }
@@ -225,7 +226,7 @@ function buildWidget(node, savedValue) {
             // Strength left arrow
             if (rx >= cx && rx < cx + ARROW_W) {
                 this._rows[rowIdx].strength = Math.round(Math.max(-10, Math.min(10, this._rows[rowIdx].strength - 0.05)) * 100) / 100;
-                app.graph.setDirtyCanvas(true, true);
+                node.setDirtyCanvas(true, true);
                 return true;
             }
 
@@ -241,7 +242,7 @@ function buildWidget(node, savedValue) {
             // Strength right arrow
             if (rx >= cx + ARROW_W + VAL_W && rx < cx + STR_W) {
                 this._rows[rowIdx].strength = Math.round(Math.max(-10, Math.min(10, this._rows[rowIdx].strength + 0.05)) * 100) / 100;
-                app.graph.setDirtyCanvas(true, true);
+                node.setDirtyCanvas(true, true);
                 return true;
             }
             cx += STR_W + GAP;
@@ -251,7 +252,7 @@ function buildWidget(node, savedValue) {
                 this._rows.splice(rowIdx, 1);
                 if (!this._rows.length) this._rows.push({ enabled: true, name: "None", strength: 1.0 });
                 node.setSize([node.size[0], node.computeSize()[1]]);
-                app.graph.setDirtyCanvas(true, true);
+                node.setDirtyCanvas(true, true);
                 return true;
             }
 

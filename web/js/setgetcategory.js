@@ -1,4 +1,4 @@
-const { app } = window.comfyAPI.app;
+import { app } from "../../../scripts/app.js";
 
 // Set/Get nodes with category filtering
 // Based on KJNodes Set/Get by kijai (originally by diffus3)
@@ -338,7 +338,7 @@ app.registerExtension({
 		let lastFP = "";
 		setInterval(() => {
 			const g = app.graph;
-			if (!g?._nodes) return;
+			if (!g?._nodes || app.configuringGraph) return;
 
 			let fp = "";
 			for (const n of g._nodes) {
@@ -354,6 +354,6 @@ app.registerExtension({
 					n._refresh();
 				}
 			}
-		}, 500);
+		}, 2000);
 	},
 });

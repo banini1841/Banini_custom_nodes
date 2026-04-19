@@ -1,4 +1,5 @@
 import { app } from "../../../scripts/app.js";
+import { api } from "../../../scripts/api.js";
 
 app.registerExtension({
 	name: "BaniniNodes.OutputFolderBrowser",
@@ -14,7 +15,7 @@ app.registerExtension({
 			if (!folderWidget) return;
 
 			// Fetch fresh folder list once on creation
-			fetch("/banini/output_folders")
+			api.fetchApi("/banini/output_folders")
 				.then(r => r.json())
 				.then(folders => {
 					folderWidget.options.values = folders;
@@ -35,14 +36,14 @@ app.registerExtension({
 				callback: () => {
 					const folderWidget = node.widgets?.find(w => w.name === "folder");
 					if (!folderWidget) return;
-					fetch("/banini/output_folders")
+					api.fetchApi("/banini/output_folders")
 						.then(r => r.json())
 						.then(folders => {
 							folderWidget.options.values = folders;
 							if (!folders.includes(folderWidget.value)) {
 								folderWidget.value = folders[0] || "(root)";
 							}
-							app.graph.setDirtyCanvas(true, true);
+							node.setDirtyCanvas(true, true);
 						})
 						.catch(() => {});
 				},
