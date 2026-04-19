@@ -14,37 +14,130 @@ async function fetchLoraList() {
 }
 fetchLoraList();
 
-const ROW_H    = 28;
-const ADD_H    = 24;
-const GAP      =  4;
-const MARGIN   = 10;
-const TOGGLE_W = 44;
-const ARROW_W  = 16;
-const VAL_W    = 50;
-const STR_W    = ARROW_W + VAL_W + ARROW_W;
-const REM_W    = 22;
-
-function nameW(totalW) {
-    return totalW - MARGIN * 2 - TOGGLE_W - STR_W - REM_W - GAP * 3;
-}
-
-function rrect(ctx, x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-}
-
 function shortName(path) {
     if (!path || path === "None") return "— select lora —";
     return path.split(/[/\\]/).pop().replace(/\.[^.]+$/, "");
+}
+
+function clampStrength(v) {
+    return Math.round(Math.max(-10, Math.min(10, v)) * 100) / 100;
+}
+
+function buildRow(row, onChange, onRemove) {
+    const rowEl = document.createElement("div");
+    rowEl.style.cssText = "display:flex;align-items:center;gap:4px;height:24px;box-sizing:border-box;";
+
+    const toggle = document.createElement("button");
+    toggle.textContent = row.enabled ? "ON" : "OFF";
+    toggle.style.cssText = `flex:0 0 44px;height:22px;border:none;border-radius:4px;color:#fff;font:bold 10px Arial;cursor:pointer;padding:0;background:${row.enabled ? "#3a7d44" : "#4a4a4a"};`;
+    toggle.onclick = (e) => {
+        e.stopPropagation();
+        row.enabled = !row.enabled;
+        toggle.textContent = row.enabled ? "ON" : "OFF";
+        toggle.style.background = row.enabled ? "#3a7d44" : "#4a4a4a";
+        onChange();
+    };
+    rowEl.appendChild(toggle);
+
+    const nameBtn = document.createElement("button");
+    nameBtn.textContent = shortName(row.name);
+    nameBtn.style.cssText = `flex:1 1 auto;min-width:60px;height:22px;background:#222;color:${row.name && row.name !== "None" ? "#ddd" : "#666"};border:1px solid #555;border-radius:4px;font:11px Arial;text-align:left;padding:0 6px;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;`;
+    nameBtn.onclick = (e) => {
+        e.stopPropagation();
+        new LiteGraph.ContextMenu(
+            LORA_LIST.map(v => ({
+                content: v,
+                callback: () => {
+                    row.name = v;
+                    nameBtn.textContent = shortName(row.name);
+                    nameBtn.style.color = row.name && row.name !== "None" ? "#ddd" : "#666";
+                    onChange();
+                }
+            })),
+            { event: e, className: "dark", scroll_speed: 0.1 }
+        );
+    };
+    rowEl.appendChild(nameBtn);
+
+    const strBox = document.createElement("div");
+    strBox.style.cssText = "display:flex;flex:0 0 82px;height:22px;background:#222;border:1px solid #555;border-radius:4px;overflow:hidden;box-sizing:border-box;";
+
+    const left = document.createElement("button");
+    left.textContent = "<";
+    left.style.cssText = "width:16px;background:transparent;border:none;color:#aaa;font:11px Arial;cursor:pointer;padding:0;";
+    left.onclick = (e) => {
+        e.stopPropagation();
+        row.strength = clampStrength(row.strength - 0.05);
+        val.textContent = row.strength.toFixed(2);
+        onChange();
+    };
+
+    const val = document.createElement("span");
+    val.textContent = row.strength.toFixed(2);
+    val.style.cssText = "flex:1;text-align:center;color:#ddd;font:11px Arial;line-height:22px;cursor:ew-resize;user-select:none;touch-action:none;";
+
+    let dragStartX = 0, dragStartStrength = 0, hasDragged = false, dragPointerId = -1;
+    val.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+        dragStartX = e.clientX;
+        dragStartStrength = row.strength;
+        hasDragged = false;
+        dragPointerId = e.pointerId;
+        val.setPointerCapture(e.pointerId);
+    });
+    val.addEventListener("pointermove", (e) => {
+        if (e.pointerId !== dragPointerId) return;
+        const dx = e.clientX - dragStartX;
+        if (Math.abs(dx) > 2) hasDragged = true;
+        if (hasDragged) {
+            row.strength = clampStrength(dragStartStrength + dx * 0.05);
+            val.textContent = row.strength.toFixed(2);
+        }
+    });
+    val.addEventListener("pointerup", (e) => {
+        if (e.pointerId !== dragPointerId) return;
+        try { val.releasePointerCapture(dragPointerId); } catch {}
+        const wasDragged = hasDragged;
+        dragPointerId = -1;
+        if (wasDragged) {
+            onChange();
+        } else {
+            app.canvas.prompt("Strength", row.strength, (v) => {
+                const n = parseFloat(v);
+                if (!isNaN(n)) {
+                    row.strength = clampStrength(n);
+                    val.textContent = row.strength.toFixed(2);
+                    onChange();
+                }
+            }, e);
+        }
+    });
+
+    const right = document.createElement("button");
+    right.textContent = ">";
+    right.style.cssText = "width:16px;background:transparent;border:none;color:#aaa;font:11px Arial;cursor:pointer;padding:0;";
+    right.onclick = (e) => {
+        e.stopPropagation();
+        row.strength = clampStrength(row.strength + 0.05);
+        val.textContent = row.strength.toFixed(2);
+        onChange();
+    };
+
+    strBox.appendChild(left);
+    strBox.appendChild(val);
+    strBox.appendChild(right);
+    rowEl.appendChild(strBox);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.textContent = "×";
+    removeBtn.style.cssText = "flex:0 0 22px;height:22px;background:#6a1e1e;color:#fff;border:none;border-radius:4px;font:bold 14px Arial;cursor:pointer;padding:0;";
+    removeBtn.onclick = (e) => {
+        e.stopPropagation();
+        onRemove();
+    };
+    rowEl.appendChild(removeBtn);
+
+    return rowEl;
 }
 
 function buildWidget(node, savedValue) {
@@ -52,215 +145,54 @@ function buildWidget(node, savedValue) {
     try { rows = JSON.parse(savedValue); } catch { rows = []; }
     if (!rows.length) rows = [{ enabled: true, name: "None", strength: 1.0 }];
 
-    const w = {
-        name: "loras",
-        type: "custom",
-        _rows: rows,
-        _y: 0,
-        _draggingRow: -1,
-        _dragStartX: 0,
-        _dragStartStrength: 0,
-        _hasDragged: false,
+    const container = document.createElement("div");
+    container.style.cssText = "display:flex;flex-direction:column;gap:2px;padding:4px;box-sizing:border-box;width:100%;";
 
-        get value()  { return JSON.stringify(this._rows); },
-        set value(v) {
-            try { this._rows = typeof v === "string" ? JSON.parse(v) : v; }
-            catch { this._rows = []; }
-            if (!this._rows?.length) this._rows = [{ enabled: true, name: "None", strength: 1.0 }];
-        },
+    const rowsEl = document.createElement("div");
+    rowsEl.style.cssText = "display:flex;flex-direction:column;gap:2px;";
+    container.appendChild(rowsEl);
 
-        computeSize(W) {
-            return [W, ROW_H * this._rows.length + ADD_H + GAP * 2];
-        },
+    const addBtn = document.createElement("button");
+    addBtn.textContent = "+ Add Lora";
+    addBtn.style.cssText = "width:100%;height:24px;background:#1a3a1a;color:#999;border:none;border-radius:4px;font:12px Arial;cursor:pointer;margin-top:4px;padding:0;";
+    container.appendChild(addBtn);
 
-        draw(ctx, node, W, y) {
-            this._y = y;
-            const nw = nameW(W);
-
-            for (let i = 0; i < this._rows.length; i++) {
-                const row = this._rows[i];
-                const ry  = y + i * ROW_H;
-                let   cx  = MARGIN;
-
-                // Toggle
-                ctx.fillStyle = row.enabled ? "#3a7d44" : "#4a4a4a";
-                rrect(ctx, cx, ry + 3, TOGGLE_W, ROW_H - 6, 4); ctx.fill();
-                ctx.fillStyle = "#fff";
-                ctx.font = "bold 10px Arial";
-                ctx.textAlign = "center";
-                ctx.fillText(row.enabled ? "ON" : "OFF", cx + TOGGLE_W / 2, ry + ROW_H / 2 + 4);
-                cx += TOGGLE_W + GAP;
-
-                // Name
-                ctx.fillStyle = "#222";
-                rrect(ctx, cx, ry + 3, nw, ROW_H - 6, 4); ctx.fill();
-                ctx.strokeStyle = "#555"; ctx.lineWidth = 1;
-                rrect(ctx, cx, ry + 3, nw, ROW_H - 6, 4); ctx.stroke();
-                ctx.save();
-                ctx.beginPath(); ctx.rect(cx + 4, ry, nw - 8, ROW_H); ctx.clip();
-                ctx.fillStyle = row.name && row.name !== "None" ? "#ddd" : "#666";
-                ctx.font = "11px Arial"; ctx.textAlign = "left";
-                ctx.fillText(shortName(row.name), cx + 6, ry + ROW_H / 2 + 4);
-                ctx.restore();
-                cx += nw + GAP;
-
-                // Strength: [<] [value] [>]
-                ctx.fillStyle = "#222";
-                rrect(ctx, cx, ry + 3, STR_W, ROW_H - 6, 4); ctx.fill();
-                ctx.strokeStyle = "#555"; ctx.lineWidth = 1;
-                rrect(ctx, cx, ry + 3, STR_W, ROW_H - 6, 4); ctx.stroke();
-
-                // Left arrow
-                ctx.fillStyle = "#aaa";
-                ctx.font = "11px Arial"; ctx.textAlign = "center";
-                ctx.fillText("<", cx + ARROW_W / 2, ry + ROW_H / 2 + 4);
-
-                // Value
-                ctx.fillStyle = "#ddd";
-                ctx.fillText(row.strength.toFixed(2), cx + ARROW_W + VAL_W / 2, ry + ROW_H / 2 + 4);
-
-                // Right arrow
-                ctx.fillStyle = "#aaa";
-                ctx.fillText(">", cx + ARROW_W + VAL_W + ARROW_W / 2, ry + ROW_H / 2 + 4);
-
-                cx += STR_W + GAP;
-
-                // Remove
-                ctx.fillStyle = "#6a1e1e";
-                rrect(ctx, cx, ry + 3, REM_W, ROW_H - 6, 4); ctx.fill();
-                ctx.fillStyle = "#fff"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center";
-                ctx.fillText("×", cx + REM_W / 2, ry + ROW_H / 2 + 5);
-            }
-
-            // Add button
-            const ay = y + this._rows.length * ROW_H + GAP;
-            ctx.fillStyle = "#1a3a1a";
-            rrect(ctx, MARGIN, ay, W - MARGIN * 2, ADD_H, 4); ctx.fill();
-            ctx.fillStyle = "#999"; ctx.font = "12px Arial"; ctx.textAlign = "center";
-            ctx.fillText("+ Add Lora", W / 2, ay + ADD_H / 2 + 4);
-        },
-
-        mouse(event, pos, node) {
-            const W  = node.size[0];
-            const nw = nameW(W);
-            const ry = pos[1] - this._y;
-            const rx = pos[0] - MARGIN;
-
-            if (event.type === "pointermove") {
-                if (this._draggingRow >= 0) {
-                    const dx = event.clientX - this._dragStartX;
-                    if (Math.abs(dx) > 2) this._hasDragged = true;
-                    if (this._hasDragged) {
-                        const v = this._dragStartStrength + dx * 0.05;
-                        this._rows[this._draggingRow].strength = Math.round(Math.max(-10, Math.min(10, v)) * 100) / 100;
-                        return true;
-                    }
-                }
-                return;
-            }
-
-            if (event.type === "pointerup") {
-                const wasDragging = this._draggingRow >= 0;
-                const hadDragged  = this._hasDragged;
-                const dragRow     = this._draggingRow;
-                this._draggingRow = -1;
-                this._hasDragged  = false;
-
-                // If clicked value without dragging, open prompt
-                if (wasDragging && !hadDragged) {
-                    const strCx = TOGGLE_W + GAP + nw + GAP;
-                    const localRx = pos[0] - MARGIN;
-                    if (localRx >= strCx + ARROW_W && localRx < strCx + ARROW_W + VAL_W) {
-                        app.canvas.prompt("Strength", this._rows[dragRow].strength, (v) => {
-                            const n = parseFloat(v);
-                            if (!isNaN(n)) {
-                                this._rows[dragRow].strength = Math.round(Math.max(-10, Math.min(10, n)) * 100) / 100;
-                                node.setDirtyCanvas(true, true);
-                            }
-                        }, event);
-                    }
-                }
-                return wasDragging ? true : undefined;
-            }
-
-            if (event.type !== "pointerdown") return;
-
-            // Add button
-            const ay = this._rows.length * ROW_H + GAP;
-            if (ry >= ay && ry < ay + ADD_H) {
-                this._rows.push({ enabled: true, name: "None", strength: 1.0 });
-                node.setSize([node.size[0], node.computeSize()[1]]);
-                node.setDirtyCanvas(true, true);
-                return true;
-            }
-
-            const rowIdx = Math.floor(ry / ROW_H);
-            if (rowIdx < 0 || rowIdx >= this._rows.length) return;
-
-            let cx = 0;
-
-            // Toggle
-            if (rx >= cx && rx < cx + TOGGLE_W) {
-                this._rows[rowIdx].enabled = !this._rows[rowIdx].enabled;
-                node.setDirtyCanvas(true, true);
-                return true;
-            }
-            cx += TOGGLE_W + GAP;
-
-            // Name dropdown
-            if (rx >= cx && rx < cx + nw) {
-                new LiteGraph.ContextMenu(
-                    LORA_LIST.map(v => ({
-                        content: v,
-                        callback: () => {
-                            this._rows[rowIdx].name = v;
-                            node.setDirtyCanvas(true, true);
-                        }
-                    })),
-                    { event, className: "dark" }
-                );
-                return true;
-            }
-            cx += nw + GAP;
-
-            // Strength left arrow
-            if (rx >= cx && rx < cx + ARROW_W) {
-                this._rows[rowIdx].strength = Math.round(Math.max(-10, Math.min(10, this._rows[rowIdx].strength - 0.05)) * 100) / 100;
-                node.setDirtyCanvas(true, true);
-                return true;
-            }
-
-            // Strength value (start drag, confirm on pointerup if no drag)
-            if (rx >= cx + ARROW_W && rx < cx + ARROW_W + VAL_W) {
-                this._draggingRow       = rowIdx;
-                this._dragStartX        = event.clientX;
-                this._dragStartStrength = this._rows[rowIdx].strength;
-                this._hasDragged        = false;
-                return true;
-            }
-
-            // Strength right arrow
-            if (rx >= cx + ARROW_W + VAL_W && rx < cx + STR_W) {
-                this._rows[rowIdx].strength = Math.round(Math.max(-10, Math.min(10, this._rows[rowIdx].strength + 0.05)) * 100) / 100;
-                node.setDirtyCanvas(true, true);
-                return true;
-            }
-            cx += STR_W + GAP;
-
-            // Remove
-            if (rx >= cx && rx < cx + REM_W) {
-                this._rows.splice(rowIdx, 1);
-                if (!this._rows.length) this._rows.push({ enabled: true, name: "None", strength: 1.0 });
-                node.setSize([node.size[0], node.computeSize()[1]]);
-                node.setDirtyCanvas(true, true);
-                return true;
-            }
-
-            return;
-        }
+    const onChange = () => {
+        node.setDirtyCanvas?.(true, true);
     };
 
-    return w;
+    const render = () => {
+        rowsEl.replaceChildren(...rows.map((row, i) => buildRow(row, onChange, () => {
+            rows.splice(i, 1);
+            if (!rows.length) rows.push({ enabled: true, name: "None", strength: 1.0 });
+            render();
+            node.setSize([node.size[0], node.computeSize()[1]]);
+            onChange();
+        })));
+    };
+
+    addBtn.onclick = (e) => {
+        e.stopPropagation();
+        rows.push({ enabled: true, name: "None", strength: 1.0 });
+        render();
+        node.setSize([node.size[0], node.computeSize()[1]]);
+        onChange();
+    };
+
+    render();
+
+    const widget = node.addDOMWidget("loras", "power_lora_stack", container, {
+        serialize: true,
+        hideOnZoom: false,
+        getValue: () => JSON.stringify(rows),
+        setValue: (v) => {
+            try { rows = typeof v === "string" ? JSON.parse(v) : v; } catch { rows = []; }
+            if (!rows?.length) rows = [{ enabled: true, name: "None", strength: 1.0 }];
+            render();
+        },
+    });
+
+    return widget;
 }
 
 app.registerExtension({
@@ -269,26 +201,17 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name !== "PowerLoraStack") return;
 
-        // Re-fetch lora list on every node def refresh (e.g. pressing 'r')
         fetchLoraList();
 
         const _onCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function () {
             _onCreated?.apply(this, arguments);
 
-            const idx   = this.widgets?.findIndex(w => w.name === "loras") ?? -1;
+            const idx = this.widgets?.findIndex(w => w.name === "loras") ?? -1;
             const saved = idx >= 0 ? this.widgets[idx].value : "[]";
             if (idx >= 0) this.widgets.splice(idx, 1);
 
-            const widget = buildWidget(this, saved);
-            this.addCustomWidget(widget);
-
-            // addCustomWidget appends — move back to the original slot so the
-            // widget stays where the stock "loras" string widget was.
-            if (idx >= 0 && idx < this.widgets.length - 1) {
-                const added = this.widgets.pop();
-                this.widgets.splice(idx, 0, added);
-            }
+            buildWidget(this, saved);
 
             this.setSize([Math.max(this.size[0], 360), this.computeSize()[1]]);
         };
