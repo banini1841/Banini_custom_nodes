@@ -153,10 +153,10 @@ function buildWidget(node, savedValue) {
                     if (this._hasDragged) {
                         const v = this._dragStartStrength + dx * 0.05;
                         this._rows[this._draggingRow].strength = Math.round(Math.max(-10, Math.min(10, v)) * 100) / 100;
-                        node.setDirtyCanvas(true, true);
+                        return true;
                     }
                 }
-                return false;
+                return;
             }
 
             if (event.type === "pointerup") {
@@ -180,10 +180,10 @@ function buildWidget(node, savedValue) {
                         }, event);
                     }
                 }
-                return false;
+                return wasDragging ? true : undefined;
             }
 
-            if (event.type !== "pointerdown") return false;
+            if (event.type !== "pointerdown") return;
 
             // Add button
             const ay = this._rows.length * ROW_H + GAP;
@@ -195,7 +195,7 @@ function buildWidget(node, savedValue) {
             }
 
             const rowIdx = Math.floor(ry / ROW_H);
-            if (rowIdx < 0 || rowIdx >= this._rows.length) return false;
+            if (rowIdx < 0 || rowIdx >= this._rows.length) return;
 
             let cx = 0;
 
@@ -256,7 +256,7 @@ function buildWidget(node, savedValue) {
                 return true;
             }
 
-            return false;
+            return;
         }
     };
 
