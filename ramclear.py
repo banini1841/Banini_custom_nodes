@@ -21,6 +21,12 @@ except Exception:
     _HAS_MALLOC_TRIM = False
 
 
+def _trim():
+    gc.collect()
+    if _HAS_MALLOC_TRIM:
+        _malloc_trim(0)
+
+
 def _malloc_trim_call():
     if _HAS_MALLOC_TRIM:
         _malloc_trim(0)
@@ -52,6 +58,75 @@ def _free_ram() -> str:
     summary = " | ".join(report)
     print(f"[FreeCPUMemory] {summary}")
     return summary
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TensorDrain: destroys the input tensor's backing storage in-place.
+#
+# ComfyUI's execution cache holds references to every node output.
+# gc.collect() can't free them — they're not garbage, they're cached.
+# --cache-lru doesn't work reliably with subgraphs/components.
+#
+# This node does something different: it calls .storage().resize_(0) on
+# the input tensor, which deallocates the actual memory while leaving the
+# Python/torch object alive (pointing to an empty storage). ComfyUI's
+# cache still holds its reference, but that reference now costs ~0 bytes
+# instead of gigabytes.
+#
+# IMPORTANT: This is destructive. The input tensor becomes unusable after
+# this node runs. Only use this when you're certain nothing downstream
+# needs the original data.
+#
+# Typical placement:
+#   Original frames ─→ ColorMatchV2 ─→ TensorDrain(original) ─→ RIFE VFI
+#                                        ↑ frees ~14.5 GB
+# ─────────────────────────────────────────────────────────────────────────────
+class TensorDrain:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                # The tensor you want to KEEP and pass through
+                "keep": ("IMAGE",),
+            },
+            "optional": {
+                # Variable drain inputs — connect as many as you need.
+                # ComfyUI auto-extends optional IMAGE inputs.
+                "drain1": ("IMAGE",),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "run"
+    CATEGORY = "utils"
+
+    def run(self, keep, **kwargs):
+        total_freed = 0
+        count = 0
+
+        for key, tensor in kwargs.items():
+            if tensor is None:
+                continue
+            if not isinstance(tensor, torch.Tensor):
+                continue
+
+            size_bytes = tensor.element_size() * tensor.nelement()
+            shape = list(tensor.shape)
+
+            tensor.storage().resize_(0)
+
+            total_freed += size_bytes
+            count += 1
+            print(f"[TensorDrain] Drained {key}: {shape} "
+                  f"({size_bytes / 1e9:.1f} GB)")
+
+        _trim()
+
+        print(f"[TensorDrain] Total: {count} tensors, "
+              f"{total_freed / 1e9:.1f} GB freed")
+
+        return (keep,)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -361,6 +436,7 @@ class MemoryDiagnostic:
 
 # ─────────────────────────────────────────────────────────────────────────────
 NODE_CLASS_MAPPINGS = {
+    "TensorDrain": TensorDrain,
     "FreeCPUMemory": FreeCPUMemory,
     "FreeCPUMemoryTrigger": FreeCPUMemoryTrigger,
     "MemoryUsageLogger": MemoryUsageLogger,
@@ -368,6 +444,7 @@ NODE_CLASS_MAPPINGS = {
     "MemoryDiagnostic": MemoryDiagnostic,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "TensorDrain": "Tensor Drain",
     "FreeCPUMemory": "Free CPU Memory",
     "FreeCPUMemoryTrigger": "Free CPU Memory (Trigger)",
     "MemoryUsageLogger": "Memory Usage Logger",
