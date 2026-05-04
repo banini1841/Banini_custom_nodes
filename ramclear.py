@@ -5,6 +5,8 @@ import datetime
 import torch
 import psutil
 import comfy.model_management
+import numpy as np
+import sys
 from comfy.utils import common_upscale
 from .anyswitch import ANY
 
@@ -214,15 +216,161 @@ class EfficientImageBatchConcat:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Node: MemoryDiagnostic
+# ─────────────────────────────────────────────────────────────────────────────
+class MemoryDiagnostic:
+    """
+    Scans the entire Python object space and reports what's actually
+    holding RAM. Groups by type and shows the biggest individual objects.
+    """
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "optional": {
+                "image": ("IMAGE",),
+            }
+        }
+
+    RETURN_TYPES = ("STRING", "IMAGE",)
+    RETURN_NAMES = ("report", "image",)
+    FUNCTION = "diagnose"
+    CATEGORY = "utils"
+    OUTPUT_NODE = True
+
+    def diagnose(self, image=None):
+        gc.collect()
+
+        proc = psutil.Process(os.getpid())
+        mem = proc.memory_info()
+        swap = psutil.swap_memory()
+
+        lines = []
+        lines.append("=" * 70)
+        lines.append("MEMORY DIAGNOSTIC")
+        lines.append(f"Process RSS: {mem.rss / 1e9:.1f} GB")
+        lines.append(f"Process VMS: {mem.vms / 1e9:.1f} GB")
+        lines.append(f"System RAM used: {psutil.virtual_memory().used / 1e9:.1f} / {psutil.virtual_memory().total / 1e9:.1f} GB")
+        lines.append(f"System SWAP used: {swap.used / 1e9:.1f} / {swap.total / 1e9:.1f} GB")
+        lines.append("=" * 70)
+
+        # ── Scan all torch tensors on CPU ────────────────────────────────
+        cpu_tensors = []
+        gpu_tensors = []
+        for obj in gc.get_objects():
+            try:
+                if isinstance(obj, torch.Tensor):
+                    size_bytes = obj.element_size() * obj.nelement()
+                    if obj.device.type == 'cpu':
+                        cpu_tensors.append((size_bytes, list(obj.shape), obj.dtype, sys.getrefcount(obj)))
+                    else:
+                        gpu_tensors.append((size_bytes, list(obj.shape), obj.dtype, str(obj.device), sys.getrefcount(obj)))
+            except Exception:
+                pass
+
+        # Sort by size descending
+        cpu_tensors.sort(key=lambda x: -x[0])
+        gpu_tensors.sort(key=lambda x: -x[0])
+
+        total_cpu_tensor_bytes = sum(t[0] for t in cpu_tensors)
+        lines.append(f"\n── CPU Tensors: {len(cpu_tensors)} objects, {total_cpu_tensor_bytes / 1e9:.1f} GB total ──")
+
+        # Show top 20 biggest
+        for i, (sz, shape, dtype, refcount) in enumerate(cpu_tensors[:20]):
+            lines.append(f"  #{i+1}: {sz / 1e9:.2f} GB | shape={shape} | {dtype} | refcount={refcount}")
+
+        # Summarize by shape pattern
+        shape_groups = {}
+        for sz, shape, dtype, refcount in cpu_tensors:
+            key = (tuple(shape[1:]) if len(shape) > 1 else tuple(shape), str(dtype))
+            if key not in shape_groups:
+                shape_groups[key] = {"count": 0, "total_bytes": 0, "total_frames": 0}
+            shape_groups[key]["count"] += 1
+            shape_groups[key]["total_bytes"] += sz
+            shape_groups[key]["total_frames"] += shape[0] if len(shape) > 0 else 1
+
+        lines.append(f"\n── CPU Tensor groups by shape ──")
+        for key, info in sorted(shape_groups.items(), key=lambda x: -x[1]["total_bytes"]):
+            lines.append(f"  shape=*x{list(key[0])} {key[1]}: "
+                         f"{info['count']} tensors, {info['total_frames']} total frames, "
+                         f"{info['total_bytes'] / 1e9:.1f} GB")
+
+        if gpu_tensors:
+            total_gpu = sum(t[0] for t in gpu_tensors)
+            lines.append(f"\n── GPU Tensors: {len(gpu_tensors)} objects, {total_gpu / 1e9:.1f} GB total ──")
+            for i, (sz, shape, dtype, dev, refcount) in enumerate(gpu_tensors[:10]):
+                lines.append(f"  #{i+1}: {sz / 1e9:.2f} GB | shape={shape} | {dtype} | {dev} | refcount={refcount}")
+
+        # ── Scan numpy arrays ────────────────────────────────────────────
+        np_arrays = []
+        for obj in gc.get_objects():
+            try:
+                if isinstance(obj, np.ndarray):
+                    sz = obj.nbytes
+                    if sz > 1_000_000:  # Only arrays > 1 MB
+                        np_arrays.append((sz, list(obj.shape), obj.dtype, sys.getrefcount(obj)))
+            except Exception:
+                pass
+
+        np_arrays.sort(key=lambda x: -x[0])
+        total_np = sum(a[0] for a in np_arrays)
+        lines.append(f"\n── NumPy arrays (>1MB): {len(np_arrays)} objects, {total_np / 1e9:.1f} GB total ──")
+        for i, (sz, shape, dtype, refcount) in enumerate(np_arrays[:10]):
+            lines.append(f"  #{i+1}: {sz / 1e9:.2f} GB | shape={shape} | {dtype} | refcount={refcount}")
+
+        # ── Large lists/dicts (potential frame accumulators) ─────────────
+        large_lists = []
+        for obj in gc.get_objects():
+            try:
+                if isinstance(obj, list) and len(obj) > 100:
+                    # Check if it contains tensors or arrays
+                    sample = obj[0] if len(obj) > 0 else None
+                    if isinstance(sample, (torch.Tensor, np.ndarray)):
+                        total_sz = sum(
+                            (x.element_size() * x.nelement() if isinstance(x, torch.Tensor) else x.nbytes)
+                            for x in obj if isinstance(x, (torch.Tensor, np.ndarray))
+                        )
+                        large_lists.append((total_sz, len(obj), type(sample).__name__, sys.getrefcount(obj)))
+            except Exception:
+                pass
+
+        if large_lists:
+            large_lists.sort(key=lambda x: -x[0])
+            lines.append(f"\n── Large lists containing tensors/arrays ──")
+            for i, (sz, length, elem_type, refcount) in enumerate(large_lists[:10]):
+                lines.append(f"  #{i+1}: {sz / 1e9:.2f} GB | {length} elements of {elem_type} | refcount={refcount}")
+
+        # ── Unaccounted memory ───────────────────────────────────────────
+        accounted = total_cpu_tensor_bytes + total_np + sum(x[0] for x in large_lists)
+        unaccounted = mem.rss - accounted
+        lines.append(f"\n── Summary ──")
+        lines.append(f"  CPU tensors:  {total_cpu_tensor_bytes / 1e9:.1f} GB")
+        lines.append(f"  NumPy arrays: {total_np / 1e9:.1f} GB")
+        lines.append(f"  Process RSS:  {mem.rss / 1e9:.1f} GB")
+        lines.append(f"  Unaccounted:  {unaccounted / 1e9:.1f} GB (fragmentation / C libs / other)")
+        lines.append("=" * 70)
+
+        report = "\n".join(lines)
+        print(report)
+
+        if image is not None:
+            return (report, image,)
+        else:
+            # Return a tiny dummy image if no input
+            return (report, torch.zeros(1, 1, 1, 3),)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 NODE_CLASS_MAPPINGS = {
     "FreeCPUMemory": FreeCPUMemory,
     "FreeCPUMemoryTrigger": FreeCPUMemoryTrigger,
     "MemoryUsageLogger": MemoryUsageLogger,
     "EfficientImageBatchConcat": EfficientImageBatchConcat,
+    "MemoryDiagnostic": MemoryDiagnostic,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "FreeCPUMemory": "Free CPU Memory",
     "FreeCPUMemoryTrigger": "Free CPU Memory (Trigger)",
     "MemoryUsageLogger": "Memory Usage Logger",
     "EfficientImageBatchConcat": "Efficient Image Batch Concat",
+    "MemoryDiagnostic": "Memory Diagnostic",
 }
