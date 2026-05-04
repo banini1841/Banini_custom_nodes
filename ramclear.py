@@ -85,13 +85,16 @@ class TensorDrain:
     @classmethod
     def INPUT_TYPES(cls):
         return {
-            "required": {
-                # The tensor you want to KEEP and pass through
-                "keep": ("IMAGE",),
-            },
             "optional": {
+                # The tensor you want to KEEP and pass through.
+                # Optional — omit if you just want to drain without passing data.
+                "keep": ("IMAGE",),
+                # Connect any output from a node that must finish before
+                # draining (e.g. VHS_VideoCombine). Value is ignored,
+                # purely for execution ordering.
+                "after": (ANY,),
                 # Variable drain inputs — connect as many as you need.
-                # ComfyUI auto-extends optional IMAGE inputs.
+                # JS extension auto-extends these slots.
                 "drain1": ("IMAGE",),
             },
         }
@@ -100,8 +103,13 @@ class TensorDrain:
     RETURN_NAMES = ("image",)
     FUNCTION = "run"
     CATEGORY = "utils"
+    OUTPUT_NODE = True  # Ensures execution even if output isn't consumed
 
-    def run(self, keep, **kwargs):
+    @classmethod
+    def VALIDATE_INPUTS(cls, **kwargs):
+        return True
+
+    def run(self, keep=None, after=None, **kwargs):
         total_freed = 0
         count = 0
 
@@ -114,7 +122,7 @@ class TensorDrain:
             size_bytes = tensor.element_size() * tensor.nelement()
             shape = list(tensor.shape)
 
-            tensor.storage().resize_(0)
+            tensor.set_()
 
             total_freed += size_bytes
             count += 1
@@ -126,7 +134,10 @@ class TensorDrain:
         print(f"[TensorDrain] Total: {count} tensors, "
               f"{total_freed / 1e9:.1f} GB freed")
 
-        return (keep,)
+        if keep is not None:
+            return (keep,)
+        else:
+            return (torch.zeros(1, 1, 1, 3),)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
